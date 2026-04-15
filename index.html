@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YOLO Pose + OCR Web Client</title>
+    <title>무궁화 꽃이 피었습니다 (YOLO + OCR)</title>
     <style>
         body { font-family: 'Malgun Gothic', Arial, sans-serif; display: flex; flex-direction: column; align-items: center; background: #222; color: white; }
         #container { position: relative; margin-top: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
@@ -11,10 +11,14 @@
         canvas { border: 2px solid #444; background: #000; max-width: 100%; height: auto; }
         #status { margin-top: 10px; font-weight: bold; padding: 5px 15px; border-radius: 20px; background: #333; }
         .controls { margin-top: 20px; text-align: center; color: #ccc; }
+        .btn { padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; border: none; font-weight: bold; margin: 0 5px; }
+        .btn-start { background: #28a745; color: white; }
+        .btn-reset { background: #ffc107; color: black; }
+        .btn-audio { background: #444; color: white; }
     </style>
 </head>
 <body>
-    <h1>YOLO Pose + OCR 실시간 분석</h1>
+    <h1>무궁화 꽃이 피었습니다 🌺</h1>
     <div id="status">카메라 권한 확인 중...</div>
     
     <div id="container">
@@ -23,7 +27,12 @@
     </div>
 
     <div class="controls">
-        <p>서버에서 실시간으로 포즈와 텍스트(OCR)를 추출합니다.</p>
+        <p>게임 상태에 따라 자유롭게 움직이거나 멈추세요! (움직이면 탈락)</p>
+        <div>
+            <button id="startBtn" class="btn btn-start">🎮 게임 시작</button>
+            <button id="resetBtn" class="btn btn-reset">🔄 게임 리셋</button>
+            <button id="enableAudio" class="btn btn-audio">🔇 사운드 켜기</button>
+        </div>
     </div>
 
     <script>
@@ -31,12 +40,62 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const statusDiv = document.getElementById('status');
+        
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const enableAudioBtn = document.getElementById('enableAudio');
 
         let socket = null;
         let isProcessing = false;
         let lastResults = [];
+        let lastGameState = null;
+        
+        let audioEnabled = false;
+        let spokenOcrCache = new Map(); // 탈락 음성 반복 재생 방지 캐시
 
-        // COCO 키포인트 연결 쌍 (뼈대 그리기용)
+        // ── 게임 제어 버튼 이벤트 ──
+        function sendCommand(cmd) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ command: cmd }));
+            }
+        }
+        startBtn.addEventListener('click', () => sendCommand('START'));
+        resetBtn.addEventListener('click', () => sendCommand('RESET'));
+
+        // ── 사운드 켜기/끄기 토글 ──
+        enableAudioBtn.addEventListener('click', () => {
+            audioEnabled = !audioEnabled;
+            if (audioEnabled) {
+                enableAudioBtn.innerText = '🔊 사운드 끄기';
+                enableAudioBtn.style.background = '#ff4444';
+                const u = new SpeechSynthesisUtterance("");
+                speechSynthesis.speak(u);
+            } else {
+                enableAudioBtn.innerText = '🔇 사운드 켜기';
+                enableAudioBtn.style.background = '#444';
+                speechSynthesis.cancel();
+            }
+        });
+
+        // ── TTS (탈락 음성 합성) 함수 ──
+        function speakElimination(text) {
+            if (!audioEnabled || !text || text === "인식 중...") return;
+            
+            const currentTime = Date.now();
+            const lastSpoken = spokenOcrCache.get(text);
+            
+            // 동일한 사람은 10초에 한 번만 탈락이라고 부르기
+            if (!lastSpoken || (currentTime - lastSpoken > 10000)) {
+                spokenOcrCache.set(text, currentTime);
+                const utterance = new SpeechSynthesisUtterance(`${text} 탈락!`);
+                utterance.lang = 'ko-KR';
+                utterance.rate = 1.1;     
+                utterance.pitch = 1.2;    
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        // COCO 키포인트 연결 쌍
         const SKELETON = [
             [16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12],
             [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11], [2, 3],
@@ -46,14 +105,17 @@
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { width: 640, height: 480 } 
+                    video: { 
+                        width: { ideal: 640 }, 
+                        height: { ideal: 480 } 
+                    } 
                 });
                 video.srcObject = stream;
                 video.onloadedmetadata = () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     startWebSocket();
-                    renderLoop(); // 상시 렌더링 루프 시작
+                    renderLoop();
                 };
             } catch (err) {
                 console.error("Camera error:", err);
@@ -68,14 +130,14 @@
             socket.onopen = () => {
                 statusDiv.innerText = "서버 연결됨";
                 statusDiv.style.color = "#00ff00";
-                sendFrame(); // 프레임 전송 시작
+                sendFrame();
             };
 
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 lastResults = data.results;
+                lastGameState = data.game; // 게임 상태 업데이트
                 isProcessing = false;
-                // 다음 프레임 전송 (약간의 지연을 주어 과부하 방지 가능)
                 setTimeout(sendFrame, 10);
             };
 
@@ -88,51 +150,85 @@
 
         function sendFrame() {
             if (!socket || socket.readyState !== WebSocket.OPEN || isProcessing) return;
-
             isProcessing = true;
-            // 현재 프레임을 캡처하기 위한 임시 캔버스 사용 가능하지만, 
-            // 여기선 현재 화면에 보이는 canvas의 내용을 그대로 사용
-            // 품질을 0.6에서 0.85로 높여 YOLO 검출 정확도 향상
             const imageData = canvas.toDataURL('image/jpeg', 0.85);
             socket.send(imageData);
         }
 
-        // 상시 실행되는 렌더링 루프 (영상 + 결과물)
         function renderLoop() {
-            // 1. 비디오 그리기
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // 2. 서버에서 받은 마지막 결과 그리기
-            drawResults(lastResults);
-            
+            drawResults(lastResults, lastGameState);
             requestAnimationFrame(renderLoop);
         }
 
-        function drawResults(results) {
+        function drawResults(results, game) {
+            // 1. 상단 게임 상태 배너 그리기
+            if (game) {
+                let bannerColor = 'rgba(128, 128, 128, 0.8)';
+                if (game.state === 'green_light') bannerColor = 'rgba(0, 180, 0, 0.8)';
+                else if (game.state === 'red_light') bannerColor = 'rgba(220, 0, 0, 0.8)';
+                else if (game.state === 'game_over') bannerColor = 'rgba(0, 0, 0, 0.8)';
+
+                ctx.fillStyle = bannerColor;
+                ctx.fillRect(0, 0, canvas.width, 50);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 22px Malgun Gothic';
+                ctx.fillText(game.banner, 15, 33);
+                
+                if (game.total_count > 0) {
+                    const scoreText = `생존: ${game.alive_count} / ${game.total_count}`;
+                    ctx.font = 'bold 20px Arial';
+                    ctx.fillText(scoreText, canvas.width - 150, 33);
+                }
+            }
+
+            // 2. 플레이어 그리기
             results.forEach(person => {
                 const box = person.box;
                 const tid = person.id;
                 const ocr = person.ocr;
                 const kpts = person.keypoints;
+                const isAlive = person.alive !== false; // 서버에서 받은 생존 여부
 
-                // 1. 바운딩 박스
-                ctx.strokeStyle = '#00ff00';
-                ctx.lineWidth = 2;
+                // 탈락 여부에 따른 색상 변경
+                const color = isAlive ? '#00ff00' : '#ff0000';
+
+                // 바운딩 박스
+                ctx.strokeStyle = color;
+                ctx.lineWidth = isAlive ? 2 : 4;
                 ctx.strokeRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
 
-                // 2. OCR 및 ID 정보 표시
-                const label = ocr ? `${ocr} (ID:${tid})` : `ID:${tid}`;
-                ctx.fillStyle = '#00ff00';
+                // 탈락 시 거대한 X 표시 및 TTS 호출
+                if (!isAlive) {
+                    ctx.beginPath();
+                    ctx.moveTo(box[0], box[1]);
+                    ctx.lineTo(box[2], box[3]);
+                    ctx.moveTo(box[2], box[1]);
+                    ctx.lineTo(box[0], box[3]);
+                    ctx.stroke();
+
+                    // 탈락 판정 시 음성 출력
+                    if (ocr && ocr !== "인식 중...") {
+                        speakElimination(ocr);
+                    }
+                }
+
+                // OCR 이름표 그리기
+                const statusText = isAlive ? "생존" : "탈락";
+                const label = ocr ? `${ocr} [${statusText}]` : `ID:${tid} [${statusText}]`;
+                
+                ctx.fillStyle = color;
                 ctx.font = 'bold 16px Arial';
                 const textWidth = ctx.measureText(label).width;
                 ctx.fillRect(box[0], box[1] - 25, textWidth + 10, 25);
-                ctx.fillStyle = 'black';
+                ctx.fillStyle = isAlive ? 'black' : 'white';
                 ctx.fillText(label, box[0] + 5, box[1] - 7);
 
-                // 3. 뼈대 그리기
+                // 뼈대 그리기
                 if (kpts && kpts.length > 0) {
                     ctx.lineWidth = 2;
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.strokeStyle = isAlive ? 'rgba(255, 255, 255, 0.7)' : 'rgba(255, 0, 0, 0.5)';
                     SKELETON.forEach(([p1, p2]) => {
                         const kp1 = kpts[p1 - 1];
                         const kp2 = kpts[p2 - 1];
@@ -144,13 +240,13 @@
                         }
                     });
 
-                    // 4. 키포인트 점 그리기
+                    // 키포인트 점 그리기
                     kpts.forEach((kpt, idx) => {
                         const [x, y, conf] = kpt;
                         if (conf > 0.4) {
                             ctx.beginPath();
                             ctx.arc(x, y, 4, 0, 2 * Math.PI);
-                            ctx.fillStyle = idx < 5 ? '#ff0000' : '#ffff00'; // 얼굴 쪽은 빨간색
+                            ctx.fillStyle = isAlive ? (idx < 5 ? '#ff0000' : '#ffff00') : '#ff0000'; 
                             ctx.fill();
                         }
                     });
