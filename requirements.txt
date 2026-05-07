@@ -1,6 +1,15 @@
-opencv-python>=4.8.0
-opencv-contrib-python>=4.8.0
-numpy>=1.24.0
-easyocr>=1.7.0
-Pillow>=9.5.0
+# Python 3.10 recommended
+# PaddleOCR 3.x is not compatible with this project's OCR path/performance.
+paddlepaddle==2.6.2
+paddleocr==2.7.3
+ultralytics>=8.0.0
+
+# Web Server & Tools
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart
+numpy<2.0.0
+opencv-python
+Pillow
+python-dotenv
 pytest>=7.4.0

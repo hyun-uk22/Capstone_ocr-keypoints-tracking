@@ -41,3 +41,6 @@ venv.bak/
 # OS 시스템 파일
 .DS_Store
 Thumbs.db
+
+# 참고용 파일
+original_server.py
