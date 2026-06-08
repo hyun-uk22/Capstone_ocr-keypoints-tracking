@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MugunghwaYounghee"
 include(":app")
+include(":dev_app")

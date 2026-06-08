@@ -57,6 +57,8 @@ class GameEngine(
     private val redBaselineTrackIds = mutableSetOf<Int>()
     private var calibrationEndMs = 0L
     private var redBaselineReadyAtMs = 0L
+    private var lastPoseResultAtMs = 0L
+    private var averagePoseUpdateIntervalMs = DEFAULT_POSE_UPDATE_INTERVAL_MS.toFloat()
 
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -177,11 +179,17 @@ class GameEngine(
     }
 
     fun onPoses(poses: List<PlayerPose>, timestampMs: Long) {
+        updatePoseUpdateInterval()
         val tracks = trackManager.update(poses, timestampMs)
-        markOverlaps(tracks)
+        markOverlapsAndMotionHolds(tracks)
         val state = _uiState.value.gameState
 
         tracks.forEach { track ->
+            val holdMotionThisFrame = track.motionHoldFrames > 0
+            if (track.motionHoldFrames > 0) {
+                track.motionHoldFrames -= 1
+            }
+
             if (track.overlapping) {
                 track.ocrCandidates.clear()
             }
@@ -198,7 +206,7 @@ class GameEngine(
             when (state) {
                 GameState.GREEN_LIGHT, GameState.READY -> movementScorer.updateGreenBaseline(track)
                 GameState.RED_LIGHT -> {
-                    if (track.overlapping) {
+                    if (track.overlapping || holdMotionThisFrame) {
                         track.redViolationFrames = 0
                     } else {
                         evaluateRedLight(track, score)
@@ -241,6 +249,8 @@ class GameEngine(
         redBaselineTrackIds.clear()
         calibrationEndMs = 0L
         redBaselineReadyAtMs = 0L
+        lastPoseResultAtMs = 0L
+        averagePoseUpdateIntervalMs = DEFAULT_POSE_UPDATE_INTERVAL_MS.toFloat()
         _tracks.value = emptyList()
         _uiState.value = GameUiState()
         _logs.value = emptyList()
@@ -327,7 +337,7 @@ class GameEngine(
         return sorted[index]
     }
 
-    private fun markOverlaps(tracks: List<PlayerTrack>) {
+    private fun markOverlapsAndMotionHolds(tracks: List<PlayerTrack>) {
         tracks.forEach { it.overlapping = false }
         for (i in tracks.indices) {
             for (j in i + 1 until tracks.size) {
@@ -335,9 +345,17 @@ class GameEngine(
                 val second = tracks[j]
                 if (first.missedFrames > 0 || second.missedFrames > 0) continue
                 if (first.eliminated || second.eliminated) continue
-                if (iou(first.bbox, second.bbox) > 0.38f || containedOverlap(first.bbox, second.bbox) > 0.55f) {
+                val iou = iou(first.bbox, second.bbox)
+                val containedOverlap = containedOverlap(first.bbox, second.bbox)
+                val near = centerDistance(first.bbox, second.bbox) < 0.10f
+
+                if (iou > 0.38f || containedOverlap > 0.55f) {
                     first.overlapping = true
                     second.overlapping = true
+                }
+                if (iou > 0.18f || containedOverlap > 0.32f || near) {
+                    first.motionHoldFrames = maxOf(first.motionHoldFrames, OCCLUSION_MOTION_HOLD_FRAMES)
+                    second.motionHoldFrames = maxOf(second.motionHoldFrames, OCCLUSION_MOTION_HOLD_FRAMES)
                 }
             }
         }
@@ -345,8 +363,10 @@ class GameEngine(
 
     private fun prepareDelayedRedBaseline() {
         redBaselineTrackIds.clear()
-        redBaselineReadyAtMs = System.currentTimeMillis() + RED_BASELINE_DELAY_MS
+        val delayMs = dynamicRedBaselineDelayMs()
+        redBaselineReadyAtMs = System.currentTimeMillis() + delayMs
         trackManager.activeTracks().forEach { it.redViolationFrames = 0 }
+        log("Red baseline delay: ${delayMs}ms")
     }
 
     private fun ensureRedBaselineReady(track: PlayerTrack, timestampMs: Long): Boolean {
@@ -360,6 +380,23 @@ class GameEngine(
         movementScorer.captureRedLightBaseline(track)
         redBaselineTrackIds += track.id
         return false
+    }
+
+    private fun updatePoseUpdateInterval() {
+        val nowMs = System.currentTimeMillis()
+        val previousMs = lastPoseResultAtMs
+        lastPoseResultAtMs = nowMs
+        if (previousMs == 0L) return
+
+        val intervalMs = (nowMs - previousMs).coerceIn(POSE_INTERVAL_MIN_SAMPLE_MS, POSE_INTERVAL_MAX_SAMPLE_MS)
+        averagePoseUpdateIntervalMs = POSE_INTERVAL_ALPHA * intervalMs +
+            (1f - POSE_INTERVAL_ALPHA) * averagePoseUpdateIntervalMs
+    }
+
+    private fun dynamicRedBaselineDelayMs(): Long {
+        return (averagePoseUpdateIntervalMs * RED_BASELINE_INTERVAL_MULTIPLIER)
+            .toLong()
+            .coerceIn(RED_BASELINE_MIN_DELAY_MS, RED_BASELINE_MAX_DELAY_MS)
     }
 
     private fun canAcceptOcrLabel(track: PlayerTrack, label: String): Boolean {
@@ -390,7 +427,20 @@ class GameEngine(
         return intersection / smallerArea
     }
 
+    private fun centerDistance(a: RectF, b: RectF): Float {
+        val dx = a.centerX() - b.centerX()
+        val dy = a.centerY() - b.centerY()
+        return kotlin.math.hypot(dx, dy)
+    }
+
     companion object {
-        private const val RED_BASELINE_DELAY_MS = 700L
+        private const val DEFAULT_POSE_UPDATE_INTERVAL_MS = 120L
+        private const val POSE_INTERVAL_MIN_SAMPLE_MS = 16L
+        private const val POSE_INTERVAL_MAX_SAMPLE_MS = 500L
+        private const val POSE_INTERVAL_ALPHA = 0.12f
+        private const val RED_BASELINE_INTERVAL_MULTIPLIER = 1.5f
+        private const val RED_BASELINE_MIN_DELAY_MS = 120L
+        private const val RED_BASELINE_MAX_DELAY_MS = 700L
+        private const val OCCLUSION_MOTION_HOLD_FRAMES = 8
     }
 }

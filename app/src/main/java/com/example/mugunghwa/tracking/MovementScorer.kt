@@ -3,7 +3,6 @@ package com.example.mugunghwa.tracking
 import kotlin.math.hypot
 
 class MovementScorer(
-    private val alpha: Float = 0.45f,
     defaultThreshold: Float = 0.006f
 ) {
     var movementThreshold: Float = defaultThreshold
@@ -12,7 +11,6 @@ class MovementScorer(
     private val previousLandmarksByTrack = mutableMapOf<Int, Map<Int, LandmarkPoint>>()
     private val redBaselineLandmarksByTrack = mutableMapOf<Int, Map<Int, LandmarkPoint>>()
     private val redBaselineBboxByTrack = mutableMapOf<Int, android.graphics.RectF>()
-    private val smoothedByTrack = mutableMapOf<Int, Float>()
 
     fun frameDeltaScore(track: PlayerTrack): Float {
         val current = track.landmarks
@@ -52,22 +50,17 @@ class MovementScorer(
             if (distances.isEmpty()) 0f else distances.average().toFloat()
         }
 
-        val oldSmoothed = smoothedByTrack[track.id] ?: raw
-        val smoothed = alpha * raw + (1f - alpha) * oldSmoothed
-        smoothedByTrack[track.id] = smoothed
-
-        track.movementHistory += smoothed
+        track.movementHistory += raw
         if (track.movementHistory.size > 120) {
             track.movementHistory.removeAt(0)
         }
-        return smoothed
+        return raw
     }
 
     fun updateGreenBaseline(track: PlayerTrack) {
         previousLandmarksByTrack[track.id] = track.landmarks.reliableKeyLandmarks()
         redBaselineLandmarksByTrack.remove(track.id)
         redBaselineBboxByTrack.remove(track.id)
-        smoothedByTrack[track.id] = 0f
         track.redViolationFrames = 0
     }
 
@@ -77,7 +70,6 @@ class MovementScorer(
         if (baseline.isNotEmpty()) {
             redBaselineLandmarksByTrack[track.id] = baseline
             previousLandmarksByTrack[track.id] = baseline
-            smoothedByTrack[track.id] = 0f
             track.redViolationFrames = 0
         }
     }
@@ -90,7 +82,6 @@ class MovementScorer(
         previousLandmarksByTrack.clear()
         redBaselineLandmarksByTrack.clear()
         redBaselineBboxByTrack.clear()
-        smoothedByTrack.clear()
         movementThreshold = 0.006f
     }
 

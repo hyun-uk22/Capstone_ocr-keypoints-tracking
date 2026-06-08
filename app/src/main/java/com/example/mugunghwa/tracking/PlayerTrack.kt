@@ -37,7 +37,8 @@ data class PlayerTrack(
     var active: Boolean = true,
     var detectionHits: Int = 1,
     var confirmed: Boolean = false,
-    var overlapping: Boolean = false
+    var overlapping: Boolean = false,
+    var motionHoldFrames: Int = 0
 ) {
     val displayName: String
         get() = label ?: "#$id"
