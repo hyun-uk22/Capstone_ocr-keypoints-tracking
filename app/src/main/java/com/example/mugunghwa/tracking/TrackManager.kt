@@ -82,6 +82,10 @@ class TrackManager(
 
     fun totalTrackedCount(): Int = tracks.size
 
+    fun hasLabelAssignedToOtherTrack(label: String, trackId: Int): Boolean {
+        return tracks.any { it.id != trackId && it.label == label }
+    }
+
     fun reset() {
         tracks.clear()
         nextTrackId = 1

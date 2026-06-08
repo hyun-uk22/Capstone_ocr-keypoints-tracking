@@ -1,7 +1,11 @@
 package com.example.mugunghwa
 
+import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +42,8 @@ import com.example.mugunghwa.game.GameEngine
 import com.example.mugunghwa.game.GameState
 import com.example.mugunghwa.mediapipe.PoseLandmarkerHelper
 import com.example.mugunghwa.ocr.OcrHelper
+import com.example.mugunghwa.recording.MediaProjectionForegroundService
+import com.example.mugunghwa.recording.ScreenOverlayRecorder
 import com.example.mugunghwa.ui.CalibrationCountdownOverlay
 import com.example.mugunghwa.ui.GameOverlay
 import com.example.mugunghwa.ui.GameSettingsPanel
@@ -46,6 +53,7 @@ import com.example.mugunghwa.ui.ShapeMenuButton
 import com.example.mugunghwa.tts.EliminationTts
 import com.example.mugunghwa.tts.SoundtrackPlayer
 import com.example.mugunghwa.util.TimeUtils
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +65,7 @@ class MainActivity : ComponentActivity() {
             val ocrHelper = remember { OcrHelper(gameEngine) }
             val soundtrackPlayer = remember { SoundtrackPlayer(applicationContext) }
             val eliminationTts = remember { EliminationTts(applicationContext) }
+            val screenRecorder = remember { ScreenOverlayRecorder(this) }
             val poseHelper = remember {
                 PoseLandmarkerHelper(
                     context = applicationContext,
@@ -72,10 +81,33 @@ class MainActivity : ComponentActivity() {
             var greenDuration by remember { mutableStateOf<LightDurationOption>(LightDurationOption.Fixed(5)) }
             var redDuration by remember { mutableStateOf<LightDurationOption>(LightDurationOption.Fixed(5)) }
             var recordGameVideo by remember { mutableStateOf(false) }
-            var recordingRequested by remember { mutableStateOf(false) }
+            var screenCaptureResultCode by remember { mutableStateOf<Int?>(null) }
+            var screenCaptureData by remember { mutableStateOf<Intent?>(null) }
             var isRecording by remember { mutableStateOf(false) }
             var recordingMessage by remember { mutableStateOf<String?>(null) }
+            var showOcrModelMessage by remember { mutableStateOf(true) }
             val lifecycleOwner = LocalLifecycleOwner.current
+            val screenCaptureLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                    screenCaptureResultCode = result.resultCode
+                    screenCaptureData = result.data
+                    recordGameVideo = true
+                    MediaProjectionForegroundService.start(applicationContext)
+                    recordingMessage = "Screen recording ready"
+                } else {
+                    screenCaptureResultCode = null
+                    screenCaptureData = null
+                    recordGameVideo = false
+                    recordingMessage = "Screen recording permission denied"
+                }
+            }
+
+            LaunchedEffect(Unit) {
+                delay(8000L)
+                showOcrModelMessage = false
+            }
 
             DisposableEffect(Unit) {
                 gameEngine.setSpeechCallback { soundtrackPlayer.playMugunghwa(flush = true) }
@@ -84,6 +116,8 @@ class MainActivity : ComponentActivity() {
                 }
                 poseHelper.setup()
                 onDispose {
+                    screenRecorder.stop()
+                    MediaProjectionForegroundService.stop(applicationContext)
                     poseHelper.close()
                     ocrHelper.close()
                     soundtrackPlayer.close()
@@ -94,7 +128,11 @@ class MainActivity : ComponentActivity() {
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_STOP) {
-                        recordingRequested = false
+                        screenRecorder.stop(
+                            onStateChange = { isRecording = it },
+                            onMessage = { recordingMessage = it }
+                        )
+                        MediaProjectionForegroundService.stop(applicationContext)
                         recordingMessage = null
                         soundtrackPlayer.stop()
                         eliminationTts.stop()
@@ -115,10 +153,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize()) {
                         CameraScreen(
                             analyzer = analyzer,
-                            lensMode = cameraLensMode,
-                            recordingRequested = recordingRequested,
-                            onRecordingStateChange = { isRecording = it },
-                            onRecordingMessage = { recordingMessage = it }
+                            lensMode = cameraLensMode
                         )
                         GameOverlay(tracks = tracks)
                         RedLightBorderOverlay(
@@ -153,6 +188,16 @@ class MainActivity : ComponentActivity() {
                                         .padding(10.dp)
                                 )
                             }
+                            if (showOcrModelMessage) {
+                                Text(
+                                    text = "OCR model may download on first run",
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xAA101014))
+                                        .padding(10.dp)
+                                )
+                            }
                             uiState.modelMissingMessage?.let { message ->
                                 if (message.isNotBlank()) {
                                     Text(
@@ -178,14 +223,51 @@ class MainActivity : ComponentActivity() {
                                 onGreenDurationChange = { greenDuration = it },
                                 onRedDurationChange = { redDuration = it },
                                 onCameraLensModeChange = { cameraLensMode = it },
-                                onRecordGameVideoChange = { recordGameVideo = it },
+                                onRecordGameVideoChange = { enabled ->
+                                    if (enabled) {
+                                        screenCaptureLauncher.launch(screenRecorder.createCaptureIntent())
+                                    } else {
+                                        recordGameVideo = false
+                                        screenCaptureResultCode = null
+                                        screenCaptureData = null
+                                        if (isRecording) {
+                                            screenRecorder.stop(
+                                                onStateChange = { isRecording = it },
+                                                onMessage = { recordingMessage = it }
+                                            )
+                                        }
+                                        MediaProjectionForegroundService.stop(applicationContext)
+                                    }
+                                },
                                 onStartAuto = { greenSeconds, redSeconds ->
+                                    settingsOpen = false
                                     recordingMessage = null
-                                    recordingRequested = recordGameVideo
+                                    if (recordGameVideo) {
+                                        val resultCode = screenCaptureResultCode
+                                        val data = screenCaptureData
+                                        if (resultCode != null && data != null) {
+                                            screenRecorder.start(
+                                                resultCode = resultCode,
+                                                data = data,
+                                                onStateChange = { isRecording = it },
+                                                onMessage = { recordingMessage = it }
+                                            )
+                                        } else {
+                                            recordGameVideo = false
+                                            recordingMessage = "Turn REC ON again"
+                                        }
+                                    }
                                     gameEngine.startAutoGame(greenSeconds, redSeconds)
                                 },
                                 onStopAuto = {
-                                    recordingRequested = false
+                                    screenRecorder.stop(
+                                        onStateChange = { isRecording = it },
+                                        onMessage = { recordingMessage = it }
+                                    )
+                                    screenCaptureResultCode = null
+                                    screenCaptureData = null
+                                    recordGameVideo = false
+                                    MediaProjectionForegroundService.stop(applicationContext)
                                     soundtrackPlayer.stop()
                                     eliminationTts.stop()
                                     gameEngine.reset()

@@ -36,7 +36,7 @@ class OcrHelper(
         }
         lastRunMs = nowMs
 
-        val targets = tracks.filter { it.active && !it.eliminated && it.label == null }
+        val targets = tracks.filter { isOcrSafeTarget(it, tracks) }
         val target = chooseTarget(targets)
         if (target == null) {
             bitmap.recycleIfNeeded()
@@ -76,6 +76,19 @@ class OcrHelper(
         val target = targets[nextTargetOffset % targets.size]
         nextTargetOffset = (nextTargetOffset + 1) % targets.size
         return target
+    }
+
+    private fun isOcrSafeTarget(track: PlayerTrack, tracks: List<PlayerTrack>): Boolean {
+        if (!track.active || track.eliminated || track.label != null || track.overlapping) return false
+        if (track.missedFrames > 0) return false
+
+        val roi = chestRoi(track) ?: fallbackRoi(track)
+        return tracks.none { other ->
+            other.id != track.id &&
+                other.active &&
+                !other.eliminated &&
+                (iou(track.bbox, other.bbox) > 0.12f || intersectionRatio(roi, other.bbox) > 0.08f)
+        }
     }
 
     private fun chestRoi(track: PlayerTrack): RectF? {
@@ -186,6 +199,28 @@ class OcrHelper(
     private fun List<Float>.averageOrNull(): Float? {
         if (isEmpty()) return null
         return average().toFloat()
+    }
+
+    private fun iou(a: RectF, b: RectF): Float {
+        val left = maxOf(a.left, b.left)
+        val top = maxOf(a.top, b.top)
+        val right = minOf(a.right, b.right)
+        val bottom = minOf(a.bottom, b.bottom)
+        val intersection = (right - left).coerceAtLeast(0f) * (bottom - top).coerceAtLeast(0f)
+        val union = a.width() * a.height() + b.width() * b.height() - intersection
+        if (union <= 0f) return 0f
+        return intersection / union
+    }
+
+    private fun intersectionRatio(target: RectF, other: RectF): Float {
+        val left = maxOf(target.left, other.left)
+        val top = maxOf(target.top, other.top)
+        val right = minOf(target.right, other.right)
+        val bottom = minOf(target.bottom, other.bottom)
+        val intersection = (right - left).coerceAtLeast(0f) * (bottom - top).coerceAtLeast(0f)
+        val targetArea = target.width() * target.height()
+        if (targetArea <= 0f) return 0f
+        return intersection / targetArea
     }
 
     private fun Bitmap.recycleIfNeeded() {

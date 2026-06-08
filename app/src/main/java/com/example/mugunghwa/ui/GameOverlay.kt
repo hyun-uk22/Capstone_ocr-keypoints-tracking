@@ -30,12 +30,6 @@ fun GameOverlay(
             textSize = 48f
             isFakeBoldText = true
         }
-        val holdPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color(0xFFFFC400).toArgb()
-            textSize = 48f
-            isFakeBoldText = true
-        }
-
         tracks.forEach { track ->
             val color = when {
                 track.eliminated -> Color(0xFFFF1744)
@@ -67,8 +61,6 @@ fun GameOverlay(
             drawContext.canvas.nativeCanvas.drawText(label, left, (top - 12f).coerceAtLeast(36f), textPaint)
             if (track.eliminated) {
                 drawContext.canvas.nativeCanvas.drawText("OUT", left + 8f, top + 54f, outPaint)
-            } else if (track.overlapping) {
-                drawContext.canvas.nativeCanvas.drawText("HOLD", left + 8f, top + 54f, holdPaint)
             }
         }
     }

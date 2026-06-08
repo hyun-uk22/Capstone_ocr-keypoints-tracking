@@ -1,13 +1,10 @@
 package com.example.mugunghwa.camera
 
 import android.Manifest
-import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.os.Build
-import android.provider.MediaStore
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,14 +15,6 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.FallbackStrategy
-import androidx.camera.video.MediaStoreOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,17 +34,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.text.SimpleDateFormat
-import java.util.Locale
 import java.util.concurrent.Executors
 
 @Composable
 fun CameraScreen(
     analyzer: ImageAnalysis.Analyzer,
     lensMode: CameraLensMode,
-    recordingRequested: Boolean,
-    onRecordingStateChange: (Boolean) -> Unit,
-    onRecordingMessage: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -63,50 +47,12 @@ fun CameraScreen(
     var hasCameraPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
-    var hasStoragePermission by remember {
-        mutableStateOf(hasLegacyStoragePermission(context))
-    }
-    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
-    var activeRecording by remember { mutableStateOf<Recording?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
-    }
-    val storagePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasStoragePermission = granted
     }
 
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
-    }
-
-    LaunchedEffect(recordingRequested, videoCapture, hasCameraPermission, hasStoragePermission) {
-        val capture = videoCapture
-        if (!recordingRequested) {
-            activeRecording?.stop()
-            activeRecording = null
-            onRecordingStateChange(false)
-            return@LaunchedEffect
-        }
-        if (!hasCameraPermission || capture == null || activeRecording != null) return@LaunchedEffect
-        if (!hasStoragePermission && Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            return@LaunchedEffect
-        }
-        activeRecording = startVideoRecording(
-            context = context,
-            videoCapture = capture,
-            onRecordingStateChange = onRecordingStateChange,
-            onRecordingMessage = onRecordingMessage,
-            onFinalized = { activeRecording = null }
-        )
-    }
-
-    DisposableEffect(lensMode) {
-        onDispose {
-            activeRecording?.stop()
-            activeRecording = null
-            onRecordingStateChange(false)
-        }
     }
 
     if (!hasCameraPermission) {
@@ -129,22 +75,17 @@ fun CameraScreen(
             factory = { ctx ->
                 val previewView = PreviewView(ctx).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 }
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                    val recorder = Recorder.Builder()
-                        .setQualitySelector(
-                            QualitySelector.from(
-                                Quality.SD,
-                                FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
-                            )
-                        )
+                    val preview = Preview.Builder()
+                        .setTargetResolution(Size(1920, 1080))
                         .build()
-                    val boundVideoCapture = VideoCapture.withOutput(recorder)
+                        .also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
@@ -156,65 +97,17 @@ fun CameraScreen(
                     val useCaseGroupBuilder = UseCaseGroup.Builder()
                         .addUseCase(preview)
                         .addUseCase(imageAnalysis)
-                        .addUseCase(boundVideoCapture)
                     previewView.viewPort?.let { useCaseGroupBuilder.setViewPort(it) }
                     cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         selectBackCamera(ctx, lensMode),
                         useCaseGroupBuilder.build()
                     )
-                    videoCapture = boundVideoCapture
                 }, ContextCompat.getMainExecutor(ctx))
                 previewView
             }
         )
     }
-}
-
-private fun hasLegacyStoragePermission(context: Context): Boolean {
-    return Build.VERSION.SDK_INT > Build.VERSION_CODES.P ||
-        ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-}
-
-private fun startVideoRecording(
-    context: Context,
-    videoCapture: VideoCapture<Recorder>,
-    onRecordingStateChange: (Boolean) -> Unit,
-    onRecordingMessage: (String?) -> Unit,
-    onFinalized: () -> Unit
-): Recording {
-    val name = "Freeze_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())}"
-    val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Freeze")
-        }
-    }
-    val outputOptions = MediaStoreOutputOptions.Builder(
-        context.contentResolver,
-        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-    ).setContentValues(contentValues).build()
-
-    return videoCapture.output
-        .prepareRecording(context, outputOptions)
-        .start(ContextCompat.getMainExecutor(context)) { event ->
-            when (event) {
-                is VideoRecordEvent.Start -> {
-                    onRecordingStateChange(true)
-                    onRecordingMessage("Recording started")
-                }
-                is VideoRecordEvent.Finalize -> {
-                    onRecordingStateChange(false)
-                    onFinalized()
-                    if (event.hasError()) {
-                        onRecordingMessage("Recording failed")
-                    } else {
-                        onRecordingMessage("Saved to Movies/Freeze")
-                    }
-                }
-            }
-        }
 }
 
 private fun selectBackCamera(context: Context, lensMode: CameraLensMode): CameraSelector {

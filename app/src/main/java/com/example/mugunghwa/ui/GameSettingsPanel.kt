@@ -101,6 +101,7 @@ private fun GameActionControls(
         Button(
             onClick = { onStartAuto(greenDuration.resolveSeconds(), redDuration.resolveSeconds()) },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !uiState.isAutoRunning,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A884))
         ) { Text(if (uiState.isAutoRunning) "RUNNING" else "START") }
         Button(

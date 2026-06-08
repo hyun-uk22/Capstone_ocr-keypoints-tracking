@@ -54,7 +54,9 @@ class GameEngine(
     private var eliminationSpeechCallback: ((String) -> Unit)? = null
     private val eliminationQueue = mutableListOf<EliminationAnnouncement>()
     private val calibrationScores = mutableListOf<Float>()
+    private val redBaselineTrackIds = mutableSetOf<Int>()
     private var calibrationEndMs = 0L
+    private var redBaselineReadyAtMs = 0L
 
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -140,12 +142,14 @@ class GameEngine(
         }
         _uiState.value = _uiState.value.copy(gameState = next)
         if (next == GameState.RED_LIGHT) {
-            trackManager.activeTracks().forEach { movementScorer.captureRedLightBaseline(it) }
+            prepareDelayedRedBaseline()
         }
         log("State changed: $next")
     }
 
     private fun setGreenLight(greenDurationMs: Int = 3000) {
+        redBaselineTrackIds.clear()
+        redBaselineReadyAtMs = 0L
         _uiState.value = _uiState.value.copy(
             gameState = GameState.GREEN_LIGHT,
             greenDurationMs = greenDurationMs
@@ -155,7 +159,7 @@ class GameEngine(
     }
 
     private fun setRedLight() {
-        trackManager.activeTracks().forEach { movementScorer.captureRedLightBaseline(it) }
+        prepareDelayedRedBaseline()
         _uiState.value = _uiState.value.copy(gameState = GameState.RED_LIGHT, centerMessage = null)
         log("State changed: RED_LIGHT")
     }
@@ -178,8 +182,13 @@ class GameEngine(
         val state = _uiState.value.gameState
 
         tracks.forEach { track ->
-            val score = when (state) {
-                GameState.RED_LIGHT -> movementScorer.redLightScore(track)
+            if (track.overlapping) {
+                track.ocrCandidates.clear()
+            }
+
+            val score = when {
+                state == GameState.RED_LIGHT && !ensureRedBaselineReady(track, timestampMs) -> 0f
+                state == GameState.RED_LIGHT -> movementScorer.redLightScore(track)
                 else -> movementScorer.frameDeltaScore(track)
             }
             if (_uiState.value.isCalibrating) {
@@ -206,7 +215,7 @@ class GameEngine(
 
     fun lockOcrLabel(trackId: Int, label: String) {
         val track = trackManager.activeTracks().firstOrNull { it.id == trackId } ?: return
-        if (track.label == label) return
+        if (!canAcceptOcrLabel(track, label)) return
         track.label = label
         log("OCR label locked: $label")
         _tracks.value = trackManager.activeTracks().map { it.copy() }
@@ -214,9 +223,10 @@ class GameEngine(
 
     fun recordOcrCandidate(trackId: Int, candidate: String): Boolean {
         val track = trackManager.activeTracks().firstOrNull { it.id == trackId } ?: return false
+        if (!canAcceptOcrLabel(track, candidate)) return false
         val count = (track.ocrCandidates[candidate] ?: 0) + 1
         track.ocrCandidates[candidate] = count
-        return count >= 3
+        return count >= 3 && canAcceptOcrLabel(track, candidate)
     }
 
     fun setModelMissingMessage(message: String?) {
@@ -228,7 +238,9 @@ class GameEngine(
         trackManager.reset()
         movementScorer.reset()
         calibrationScores.clear()
+        redBaselineTrackIds.clear()
         calibrationEndMs = 0L
+        redBaselineReadyAtMs = 0L
         _tracks.value = emptyList()
         _uiState.value = GameUiState()
         _logs.value = emptyList()
@@ -323,12 +335,37 @@ class GameEngine(
                 val second = tracks[j]
                 if (first.missedFrames > 0 || second.missedFrames > 0) continue
                 if (first.eliminated || second.eliminated) continue
-                if (iou(first.bbox, second.bbox) > 0.28f || centerDistance(first.bbox, second.bbox) < 0.08f) {
+                if (iou(first.bbox, second.bbox) > 0.38f || containedOverlap(first.bbox, second.bbox) > 0.55f) {
                     first.overlapping = true
                     second.overlapping = true
                 }
             }
         }
+    }
+
+    private fun prepareDelayedRedBaseline() {
+        redBaselineTrackIds.clear()
+        redBaselineReadyAtMs = System.currentTimeMillis() + RED_BASELINE_DELAY_MS
+        trackManager.activeTracks().forEach { it.redViolationFrames = 0 }
+    }
+
+    private fun ensureRedBaselineReady(track: PlayerTrack, timestampMs: Long): Boolean {
+        if (track.id in redBaselineTrackIds) return true
+        track.redViolationFrames = 0
+        if (timestampMs < redBaselineReadyAtMs) {
+            movementScorer.updateGreenBaseline(track)
+            return false
+        }
+
+        movementScorer.captureRedLightBaseline(track)
+        redBaselineTrackIds += track.id
+        return false
+    }
+
+    private fun canAcceptOcrLabel(track: PlayerTrack, label: String): Boolean {
+        if (!track.active || track.eliminated || track.overlapping || track.missedFrames > 0) return false
+        if (track.label != null) return false
+        return !trackManager.hasLabelAssignedToOtherTrack(label, track.id)
     }
 
     private fun iou(a: RectF, b: RectF): Float {
@@ -342,9 +379,18 @@ class GameEngine(
         return intersection / union
     }
 
-    private fun centerDistance(a: RectF, b: RectF): Float {
-        val dx = a.centerX() - b.centerX()
-        val dy = a.centerY() - b.centerY()
-        return kotlin.math.hypot(dx, dy)
+    private fun containedOverlap(a: RectF, b: RectF): Float {
+        val left = maxOf(a.left, b.left)
+        val top = maxOf(a.top, b.top)
+        val right = minOf(a.right, b.right)
+        val bottom = minOf(a.bottom, b.bottom)
+        val intersection = (right - left).coerceAtLeast(0f) * (bottom - top).coerceAtLeast(0f)
+        val smallerArea = minOf(a.width() * a.height(), b.width() * b.height())
+        if (smallerArea <= 0f) return 0f
+        return intersection / smallerArea
+    }
+
+    companion object {
+        private const val RED_BASELINE_DELAY_MS = 700L
     }
 }
