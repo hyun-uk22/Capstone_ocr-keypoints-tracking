@@ -1,0 +1,65 @@
+# Gradle / Android build outputs
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# Local SDK and machine-specific config
+local.properties
+secrets.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+captures/
+
+# Generated APKs and app bundles
+*.apk
+*.ap_
+*.aab
+
+# Native build outputs
+.cxx/
+.externalNativeBuild/
+
+# Signing keys
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# Kotlin / Java build artifacts
+*.class
+*.dex
+out/
+
+# Node dependencies, if scripts are added later
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+hs_err_pid*
+*.hprof
+
+# Accidental local npm lock file; this project does not use Node.js
+package-lock.json
+
+# Local duplicate/reference copy
+reference_code/
+
+# Local generated TTS source files duplicated under app/src/main/res/raw
+/TTS/*.mp3
+
+# Local report files with personal information
+*.hwp
+캡스톤디자인_과제결과보고서_v2_복사본.hwp
