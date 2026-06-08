@@ -30,13 +30,14 @@ fun GameSettingsPanel(
     greenDuration: LightDurationOption,
     redDuration: LightDurationOption,
     cameraLensMode: CameraLensMode,
+    recordGameVideo: Boolean,
+    isRecording: Boolean,
     onGreenDurationChange: (LightDurationOption) -> Unit,
     onRedDurationChange: (LightDurationOption) -> Unit,
     onCameraLensModeChange: (CameraLensMode) -> Unit,
-    onStart: () -> Unit,
+    onRecordGameVideoChange: (Boolean) -> Unit,
     onStartAuto: (greenSeconds: Int, redSeconds: Int) -> Unit,
     onStopAuto: () -> Unit,
-    onToggle: () -> Unit,
     onCalibrate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -55,10 +56,11 @@ fun GameSettingsPanel(
                 uiState = uiState,
                 greenDuration = greenDuration,
                 redDuration = redDuration,
-                onStart = onStart,
+                recordGameVideo = recordGameVideo,
+                isRecording = isRecording,
+                onRecordGameVideoChange = onRecordGameVideoChange,
                 onStartAuto = onStartAuto,
                 onStopAuto = onStopAuto,
-                onToggle = onToggle,
                 onCalibrate = onCalibrate
             )
         }
@@ -88,25 +90,36 @@ private fun GameActionControls(
     uiState: GameUiState,
     greenDuration: LightDurationOption,
     redDuration: LightDurationOption,
-    onStart: () -> Unit,
+    recordGameVideo: Boolean,
+    isRecording: Boolean,
+    onRecordGameVideoChange: (Boolean) -> Unit,
     onStartAuto: (greenSeconds: Int, redSeconds: Int) -> Unit,
     onStopAuto: () -> Unit,
-    onToggle: () -> Unit,
     onCalibrate: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { onStartAuto(greenDuration.resolveSeconds(), redDuration.resolveSeconds()) },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF2E63))
-        ) { Text(if (uiState.isAutoRunning) "RUNNING" else "AUTO") }
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A884))
+        ) { Text(if (uiState.isAutoRunning) "RUNNING" else "START") }
         Button(
             onClick = onStopAuto,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00A884))
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF2E63))
         ) { Text("STOP") }
-        OutlinedButton(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START") }
-        OutlinedButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) { Text("GREEN / RED") }
+        OutlinedButton(
+            onClick = { onRecordGameVideoChange(!recordGameVideo) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                when {
+                    isRecording -> "REC..."
+                    recordGameVideo -> "REC ON"
+                    else -> "REC OFF"
+                }
+            )
+        }
         OutlinedButton(onClick = onCalibrate, modifier = Modifier.fillMaxWidth()) { Text("RECALIB") }
     }
 }

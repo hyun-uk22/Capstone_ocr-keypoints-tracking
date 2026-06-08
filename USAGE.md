@@ -4,17 +4,20 @@
 
 - Android Studio 또는 Android SDK가 설치된 Windows PC
 - 카메라가 있는 Android 스마트폰
-- `pose_landmarker_full.task` 모델 파일
+- Google Play Services가 설치된 Android 스마트폰
 
-## 2. 모델 파일 추가
+## 2. 모델 파일 확인
 
-MediaPipe Pose Landmarker Full 모델 파일을 다운로드한 뒤 아래 위치에 넣습니다.
+현재 저장소에는 앱 실행에 필요한 모델 파일이 포함되어 있습니다.
 
 ```text
+app/src/main/assets/pose_landmarker_heavy.task
 app/src/main/assets/pose_landmarker_full.task
+app/src/main/assets/efficientdet_lite0.tflite
 ```
 
-앱은 `pose_landmarker_full.task`를 우선 사용합니다. 이 파일이 없으면 `pose_landmarker_lite.task`를 fallback으로 사용합니다. 둘 다 없으면 앱은 실행되지만, 화면에 모델을 추가하라는 안내가 표시되고 포즈 인식은 동작하지 않습니다.
+앱은 `pose_landmarker_heavy.task`를 우선 사용합니다. 이 파일이 없으면 `pose_landmarker_full.task`, `pose_landmarker_lite.task` 순서로 fallback을 시도합니다. pose 모델이 모두 없으면 앱은 실행되지만, 화면에 모델을 추가하라는 안내가 표시되고 포즈 인식은 동작하지 않습니다.
+OCR 모델은 Google Play Services를 통해 설치 또는 최초 실행 시점에 내려받습니다. 따라서 OCR은 첫 실행 직후 바로 동작하지 않을 수 있으며, 네트워크 연결과 Google Play Services가 필요합니다.
 
 ## 3. APK 빌드
 
@@ -78,5 +81,5 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 - 사람 ID는 단순 centroid tracking이라 사람이 겹치거나 교차하면 바뀔 수 있습니다.
 - OCR은 bbox crop 기반 MVP라 번호표 위치와 조명에 민감합니다.
-- 자동 Green/Red 타이머와 TTS는 아직 구현되지 않았습니다.
+- 자동 Green/Red 진행과 탈락자 음성 안내는 구현되어 있습니다.
 - 탈락자 저장 DB는 아직 없습니다.

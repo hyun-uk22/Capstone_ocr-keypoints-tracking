@@ -1,4 +1,4 @@
-# Mugunghwa Younghee
+# Freeze!
 
 Android 스마트폰 카메라로 사람의 자세를 추정하고, "무궁화 꽃이 피었습니다" 게임의 영희 역할을 수행하는 온디바이스 앱입니다. 초록불에서는 움직임을 허용하고, 빨간불에서는 MediaPipe Pose Landmarker 기반 움직임 점수를 계산해 기준치를 넘은 참가자를 탈락 처리합니다.
 
@@ -7,11 +7,12 @@ Android 스마트폰 카메라로 사람의 자세를 추정하고, "무궁화 �
 - Android Native Kotlin + Jetpack Compose UI
 - CameraX 기반 실시간 카메라 프리뷰 및 프레임 분석
 - MediaPipe Tasks Vision Pose Landmarker 기반 인체 키포인트 추정
-- ML Kit Korean Text Recognition 기반 번호표/OCR 라벨 보조 인식
+- Google Play Services 기반 ML Kit Korean Text Recognition 번호표/OCR 라벨 보조 인식
 - 빨간불 시작 시점 자세를 baseline으로 저장하고 이후 자세 변화량으로 움직임 판정
 - 정지 상태 캘리브레이션을 통한 movement threshold 보정
 - 자동 Green/Red 진행, 수동 전환, 카메라 렌즈 모드 선택
 - 탈락자 번호 음성 안내 및 배경 음원 재생
+- 사용자가 선택한 경우 게임 시작부터 정지 시점까지 카메라 영상을 휴대폰에 저장
 
 ## 기술 스택
 
@@ -21,7 +22,7 @@ Android 스마트폰 카메라로 사람의 자세를 추정하고, "무궁화 �
 - Jetpack Compose
 - CameraX
 - Google AI Edge MediaPipe Tasks Vision
-- Google ML Kit Korean Text Recognition
+- Google Play Services ML Kit Korean Text Recognition
 - Kotlin Coroutines
 
 ## 프로젝트 구조
@@ -124,18 +125,20 @@ macOS/Linux:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-설치 후 스마트폰 앱 목록에서 `Mugunghwa Younghee`를 실행합니다.
+설치 후 스마트폰 앱 목록에서 `Freeze!`를 실행합니다.
 
 ## 앱 사용 방법
 
 1. 앱을 실행하고 카메라 권한을 허용합니다.
 2. 화면 오른쪽의 메뉴 버튼을 눌러 설정 패널을 엽니다.
-3. `Start`로 수동 게임을 시작하거나 `Auto`로 자동 진행을 시작합니다.
-4. 수동 모드에서는 Green/Red 전환 버튼으로 상태를 바꿉니다.
-5. 참가자들이 가만히 서 있는 상태에서 Calibrate를 실행하면 정지 기준값이 보정됩니다.
-6. 빨간불 상태에서 움직임 기준값을 넘으면 해당 참가자가 `OUT` 처리됩니다.
-7. 번호표가 OCR로 반복 인식되면 track ID 대신 해당 번호가 라벨로 고정됩니다.
-8. Reset 또는 Auto Stop으로 게임 상태를 초기화합니다.
+3. 영상을 저장하려면 `REC OFF` 버튼을 눌러 `REC ON` 상태로 바꿉니다.
+4. `START`로 자동 게임 진행을 시작합니다.
+5. `REC ON` 상태에서 게임을 시작하면 녹화가 시작되고, `STOP`을 누르면 녹화가 종료됩니다.
+6. 저장된 영상은 휴대폰 갤러리 또는 파일 앱의 `Movies/Freeze`에서 확인할 수 있습니다.
+7. 참가자들이 가만히 서 있는 상태에서 Calibrate를 실행하면 정지 기준값이 보정됩니다.
+8. 빨간불 상태에서 움직임 기준값을 넘으면 해당 참가자가 `OUT` 처리됩니다.
+9. 번호표가 OCR로 반복 인식되면 track ID 대신 해당 번호가 라벨로 고정됩니다.
+10. `STOP`으로 게임 상태를 초기화합니다.
 
 ## 모델 파일
 
@@ -148,6 +151,8 @@ app/src/main/assets/efficientdet_lite0.tflite
 ```
 
 모델 파일이 누락되면 앱은 실행되더라도 포즈 추정 기능이 정상 동작하지 않을 수 있습니다.
+
+OCR 모델은 Google Play Services를 통해 설치 또는 최초 실행 시점에 내려받습니다. 첫 실행 직후 OCR 결과가 바로 나오지 않으면 네트워크 연결과 Google Play Services 상태를 확인한 뒤 다시 실행합니다.
 
 ## 빌드 문제 해결
 
@@ -179,6 +184,7 @@ java -version
 - OCR은 번호표 크기, 조명, 거리, 카메라 흔들림에 민감합니다.
 - 움직임 판정 기준은 기기 성능, 카메라 거리, 조명 환경에 따라 캘리브레이션이 필요합니다.
 - debug APK 기준 설치 방법을 제공합니다. 배포용 release signing 설정은 포함되어 있지 않습니다.
+- 녹화 영상은 카메라 입력만 저장합니다. 앱에서 재생되는 배경음/탈락 음성은 녹화 파일에 포함되지 않습니다.
 
 ## 확인된 빌드
 

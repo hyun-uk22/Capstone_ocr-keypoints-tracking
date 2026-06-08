@@ -26,7 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.mugunghwa.camera.CameraAnalyzer
 import com.example.mugunghwa.camera.CameraLensMode
 import com.example.mugunghwa.camera.CameraScreen
@@ -68,6 +71,11 @@ class MainActivity : ComponentActivity() {
             var settingsOpen by remember { mutableStateOf(false) }
             var greenDuration by remember { mutableStateOf<LightDurationOption>(LightDurationOption.Fixed(5)) }
             var redDuration by remember { mutableStateOf<LightDurationOption>(LightDurationOption.Fixed(5)) }
+            var recordGameVideo by remember { mutableStateOf(false) }
+            var recordingRequested by remember { mutableStateOf(false) }
+            var isRecording by remember { mutableStateOf(false) }
+            var recordingMessage by remember { mutableStateOf<String?>(null) }
+            val lifecycleOwner = LocalLifecycleOwner.current
 
             DisposableEffect(Unit) {
                 gameEngine.setSpeechCallback { soundtrackPlayer.playMugunghwa(flush = true) }
@@ -83,6 +91,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_STOP) {
+                        recordingRequested = false
+                        recordingMessage = null
+                        soundtrackPlayer.stop()
+                        eliminationTts.stop()
+                        gameEngine.reset()
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
             val uiState = gameEngine.uiState.collectAsStateWithLifecycle().value
             val tracks = gameEngine.tracks.collectAsStateWithLifecycle().value
 
@@ -91,7 +115,10 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize()) {
                         CameraScreen(
                             analyzer = analyzer,
-                            lensMode = cameraLensMode
+                            lensMode = cameraLensMode,
+                            recordingRequested = recordingRequested,
+                            onRecordingStateChange = { isRecording = it },
+                            onRecordingMessage = { recordingMessage = it }
                         )
                         GameOverlay(tracks = tracks)
                         RedLightBorderOverlay(
@@ -113,8 +140,19 @@ class MainActivity : ComponentActivity() {
                                 active = uiState.activePlayerCount,
                                 isCalibrating = uiState.isCalibrating,
                                 isAutoRunning = uiState.isAutoRunning,
-                                overlapCount = uiState.overlapCount
+                                overlapCount = uiState.overlapCount,
+                                isRecording = isRecording
                             )
+                            recordingMessage?.let { message ->
+                                Text(
+                                    text = message,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xAA101014))
+                                        .padding(10.dp)
+                                )
+                            }
                             uiState.modelMissingMessage?.let { message ->
                                 if (message.isNotBlank()) {
                                     Text(
@@ -135,17 +173,23 @@ class MainActivity : ComponentActivity() {
                                 greenDuration = greenDuration,
                                 redDuration = redDuration,
                                 cameraLensMode = cameraLensMode,
+                                recordGameVideo = recordGameVideo,
+                                isRecording = isRecording,
                                 onGreenDurationChange = { greenDuration = it },
                                 onRedDurationChange = { redDuration = it },
                                 onCameraLensModeChange = { cameraLensMode = it },
-                                onStart = gameEngine::startGame,
-                                onStartAuto = gameEngine::startAutoGame,
+                                onRecordGameVideoChange = { recordGameVideo = it },
+                                onStartAuto = { greenSeconds, redSeconds ->
+                                    recordingMessage = null
+                                    recordingRequested = recordGameVideo
+                                    gameEngine.startAutoGame(greenSeconds, redSeconds)
+                                },
                                 onStopAuto = {
+                                    recordingRequested = false
                                     soundtrackPlayer.stop()
                                     eliminationTts.stop()
                                     gameEngine.reset()
                                 },
-                                onToggle = gameEngine::toggleGreenRed,
                                 onCalibrate = { gameEngine.startCalibration(TimeUtils.nowMs()) },
                                 modifier = Modifier.align(Alignment.CenterEnd)
                             )
@@ -181,7 +225,8 @@ private fun StatusBar(
     active: Int,
     isCalibrating: Boolean,
     isAutoRunning: Boolean,
-    overlapCount: Int
+    overlapCount: Int,
+    isRecording: Boolean
 ) {
     Row(
         modifier = Modifier
@@ -195,7 +240,8 @@ private fun StatusBar(
             text = when {
                 isCalibrating -> "..."
                 overlapCount > 0 -> "! $overlapCount"
-                isAutoRunning -> "AUTO"
+                isRecording -> "REC"
+                isAutoRunning -> "RUN"
                 else -> ""
             },
             color = Color.White,
