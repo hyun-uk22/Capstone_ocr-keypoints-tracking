@@ -69,7 +69,7 @@ fun CameraScreen(
         onDispose { analysisExecutor.shutdown() }
     }
 
-    key(lensMode) {
+    key(lensMode, analyzer) {
         AndroidView(
             modifier = modifier.fillMaxSize(),
             factory = { ctx ->

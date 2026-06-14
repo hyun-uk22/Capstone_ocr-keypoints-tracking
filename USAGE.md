@@ -4,7 +4,7 @@
 
 - Android Studio 또는 Android SDK가 설치된 Windows PC
 - 카메라가 있는 Android 스마트폰
-- Google Play Services가 설치된 Android 스마트폰
+- Android 스마트폰
 
 ## 2. 모델 파일 확인
 
@@ -14,10 +14,12 @@
 app/src/main/assets/pose_landmarker_heavy.task
 app/src/main/assets/pose_landmarker_full.task
 app/src/main/assets/efficientdet_lite0.tflite
+app/src/main/assets/rtmpose.onnx
+app/src/main/assets/yolo26n-pose.onnx
 ```
 
-앱은 `pose_landmarker_heavy.task`를 우선 사용합니다. 이 파일이 없으면 `pose_landmarker_full.task`, `pose_landmarker_lite.task` 순서로 fallback을 시도합니다. pose 모델이 모두 없으면 앱은 실행되지만, 화면에 모델을 추가하라는 안내가 표시되고 포즈 인식은 동작하지 않습니다.
-OCR 모델은 Google Play Services를 통해 설치 또는 최초 실행 시점에 내려받습니다. 따라서 OCR은 첫 실행 직후 바로 동작하지 않을 수 있으며, 네트워크 연결과 Google Play Services가 필요합니다.
+앱 설정에서 MediaPipe, RTMPose, YOLO26 중 포즈 모델을 선택할 수 있습니다. MediaPipe는 `pose_landmarker_heavy.task`를 우선 사용하고, 이 파일이 없으면 `pose_landmarker_full.task`, `pose_landmarker_lite.task` 순서로 fallback을 시도합니다. 선택한 pose 모델 파일이 없으면 앱은 실행되더라도 해당 포즈 인식 기능은 정상 동작하지 않습니다.
+OCR 모델은 앱에 번들되어 설치되므로 최초 실행 시점의 모델 다운로드가 필요하지 않습니다.
 
 ## 3. APK 빌드
 

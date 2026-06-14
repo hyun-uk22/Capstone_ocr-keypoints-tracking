@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.RectF
+import com.example.mugunghwa.pose.PoseEstimator
 import com.example.mugunghwa.tracking.LandmarkPoint
 import com.example.mugunghwa.tracking.PlayerPose
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -35,7 +36,7 @@ class PoseLandmarkerHelper(
     private val config: PoseConfig = PoseConfig(),
     private val onResult: (List<PlayerPose>, Long) -> Unit,
     private val onError: (String) -> Unit
-) {
+) : PoseEstimator {
     private var fullFrameLandmarker: PoseLandmarker? = null
     private var cropLandmarker: PoseLandmarker? = null
     private var objectDetector: ObjectDetector? = null
@@ -44,7 +45,7 @@ class PoseLandmarkerHelper(
     private var inFlightWidth: Int = 0
     private var inFlightHeight: Int = 0
 
-    fun setup() {
+    override fun setup() {
         val poseModelAssetPaths = resolvePoseModelAssetPaths()
         if (poseModelAssetPaths.isEmpty()) {
             onError(
@@ -90,7 +91,7 @@ class PoseLandmarkerHelper(
         onError(errors.lastOrNull() ?: "PoseLandmarker initialization failed")
     }
 
-    fun detectLiveStream(bitmap: Bitmap, rotationDegrees: Int, timestampMs: Long): Boolean {
+    override fun detectLiveStream(bitmap: Bitmap, rotationDegrees: Int, timestampMs: Long): Boolean {
         if (!busy.compareAndSet(false, true)) return false
 
         val detector = objectDetector
@@ -124,7 +125,7 @@ class PoseLandmarkerHelper(
         }
     }
 
-    fun close() {
+    override fun close() {
         closeLandmarkers()
         busy.set(false)
         recycleInFlightBitmap()

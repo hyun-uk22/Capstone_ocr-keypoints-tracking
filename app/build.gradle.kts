@@ -47,6 +47,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.5.3")
 
     implementation("com.google.mediapipe:tasks-vision:0.10.35")
-    implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.2")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

@@ -7,7 +7,7 @@ Android 스마트폰 카메라로 사람의 자세를 추정하고, "무궁화 �
 - Android Native Kotlin + Jetpack Compose UI
 - CameraX 기반 실시간 카메라 프리뷰 및 프레임 분석
 - MediaPipe Tasks Vision Pose Landmarker 기반 인체 키포인트 추정
-- Google Play Services 기반 ML Kit Korean Text Recognition 번호표/OCR 라벨 보조 인식
+- 번들형 ML Kit Korean Text Recognition 번호표/OCR 라벨 보조 인식
 - 빨간불 시작 시점 자세를 baseline으로 저장하고 이후 자세 변화량으로 움직임 판정
 - 정지 상태 캘리브레이션을 통한 movement threshold 보정
 - 자동 Green/Red 진행, 수동 전환, 카메라 렌즈 모드 선택
@@ -22,7 +22,7 @@ Android 스마트폰 카메라로 사람의 자세를 추정하고, "무궁화 �
 - Jetpack Compose
 - CameraX
 - Google AI Edge MediaPipe Tasks Vision
-- Google Play Services ML Kit Korean Text Recognition
+- Bundled ML Kit Korean Text Recognition
 - Kotlin Coroutines
 
 ## 프로젝트 구조
@@ -31,7 +31,7 @@ Android 스마트폰 카메라로 사람의 자세를 추정하고, "무궁화 �
 .
 ├── app/
 │   └── src/main/
-│       ├── assets/        # MediaPipe / TFLite 모델 파일
+│       ├── assets/        # MediaPipe / ONNX / TFLite 모델 파일
 │       ├── java/          # 앱 소스 코드
 │       └── res/           # UI 리소스, 음성 파일, 아이콘
 ├── gradle/wrapper/        # Gradle Wrapper
@@ -148,11 +148,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 app/src/main/assets/pose_landmarker_full.task
 app/src/main/assets/pose_landmarker_heavy.task
 app/src/main/assets/efficientdet_lite0.tflite
+app/src/main/assets/rtmpose.onnx
+app/src/main/assets/yolo26n-pose.onnx
 ```
 
 모델 파일이 누락되면 앱은 실행되더라도 포즈 추정 기능이 정상 동작하지 않을 수 있습니다.
 
-OCR 모델은 Google Play Services를 통해 설치 또는 최초 실행 시점에 내려받습니다. 첫 실행 직후 OCR 결과가 바로 나오지 않으면 네트워크 연결과 Google Play Services 상태를 확인한 뒤 다시 실행합니다.
+OCR 모델은 앱에 번들되어 설치되므로 최초 실행 시점의 모델 다운로드가 필요하지 않습니다.
 
 ## 빌드 문제 해결
 

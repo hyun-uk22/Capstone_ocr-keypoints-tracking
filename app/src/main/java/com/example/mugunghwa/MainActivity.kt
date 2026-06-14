@@ -42,8 +42,10 @@ import com.example.mugunghwa.game.GameEngine
 import com.example.mugunghwa.game.GameState
 import com.example.mugunghwa.mediapipe.PoseLandmarkerHelper
 import com.example.mugunghwa.ocr.OcrHelper
+import com.example.mugunghwa.pose.PoseModelType
 import com.example.mugunghwa.recording.MediaProjectionForegroundService
 import com.example.mugunghwa.recording.ScreenOverlayRecorder
+import com.example.mugunghwa.rtmpose.RTMPoseHelper
 import com.example.mugunghwa.ui.CalibrationCountdownOverlay
 import com.example.mugunghwa.ui.GameOverlay
 import com.example.mugunghwa.ui.GameSettingsPanel
@@ -53,7 +55,7 @@ import com.example.mugunghwa.ui.ShapeMenuButton
 import com.example.mugunghwa.tts.EliminationTts
 import com.example.mugunghwa.tts.SoundtrackPlayer
 import com.example.mugunghwa.util.TimeUtils
-import kotlinx.coroutines.delay
+import com.example.mugunghwa.yolo.YOLOPoseHelper
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,16 +68,32 @@ class MainActivity : ComponentActivity() {
             val soundtrackPlayer = remember { SoundtrackPlayer(applicationContext) }
             val eliminationTts = remember { EliminationTts(applicationContext) }
             val screenRecorder = remember { ScreenOverlayRecorder(this) }
-            val poseHelper = remember {
-                PoseLandmarkerHelper(
-                    context = applicationContext,
-                    onResult = { poses, timestampMs -> gameEngine.onPoses(poses, timestampMs) },
-                    onError = { message ->
-                        gameEngine.setModelMissingMessage(message.takeIf { it.isNotBlank() })
-                    }
-                )
+            var poseModelType by remember { mutableStateOf(PoseModelType.MEDIAPIPE) }
+            val poseEstimator = remember(poseModelType) {
+                val onResult: (List<com.example.mugunghwa.tracking.PlayerPose>, Long) -> Unit =
+                    { poses, timestampMs -> gameEngine.onPoses(poses, timestampMs) }
+                val onError: (String) -> Unit = { message ->
+                    gameEngine.setModelMissingMessage(message.takeIf { it.isNotBlank() })
+                }
+                when (poseModelType) {
+                    PoseModelType.MEDIAPIPE -> PoseLandmarkerHelper(
+                        context = applicationContext,
+                        onResult = onResult,
+                        onError = onError
+                    )
+                    PoseModelType.RTMPOSE -> RTMPoseHelper(
+                        context = applicationContext,
+                        onResult = onResult,
+                        onError = onError
+                    )
+                    PoseModelType.YOLO26 -> YOLOPoseHelper(
+                        context = applicationContext,
+                        onResult = onResult,
+                        onError = onError
+                    )
+                }
             }
-            val analyzer = remember { CameraAnalyzer(poseHelper, ocrHelper, gameEngine) }
+            val analyzer = remember(poseEstimator) { CameraAnalyzer(poseEstimator, ocrHelper, gameEngine) }
             var cameraLensMode by remember { mutableStateOf(CameraLensMode.NORMAL) }
             var settingsOpen by remember { mutableStateOf(false) }
             var greenDuration by remember { mutableStateOf<LightDurationOption>(LightDurationOption.Fixed(5)) }
@@ -85,7 +103,6 @@ class MainActivity : ComponentActivity() {
             var screenCaptureData by remember { mutableStateOf<Intent?>(null) }
             var isRecording by remember { mutableStateOf(false) }
             var recordingMessage by remember { mutableStateOf<String?>(null) }
-            var showOcrModelMessage by remember { mutableStateOf(true) }
             val lifecycleOwner = LocalLifecycleOwner.current
             val screenCaptureLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.StartActivityForResult()
@@ -104,24 +121,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(Unit) {
-                delay(8000L)
-                showOcrModelMessage = false
-            }
-
             DisposableEffect(Unit) {
                 gameEngine.setSpeechCallback { soundtrackPlayer.playMugunghwa(flush = true) }
                 gameEngine.setEliminationSpeechCallback { playerNumber ->
                     eliminationTts.speakOut(playerNumber)
                 }
-                poseHelper.setup()
                 onDispose {
                     screenRecorder.stop()
                     MediaProjectionForegroundService.stop(applicationContext)
-                    poseHelper.close()
                     ocrHelper.close()
                     soundtrackPlayer.close()
                     eliminationTts.close()
+                }
+            }
+
+            DisposableEffect(poseEstimator) {
+                poseEstimator.setup()
+                onDispose {
+                    poseEstimator.close()
                 }
             }
 
@@ -188,20 +205,10 @@ class MainActivity : ComponentActivity() {
                                         .padding(10.dp)
                                 )
                             }
-                            if (showOcrModelMessage) {
-                                Text(
-                                    text = "OCR model may download on first run",
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xAA101014))
-                                        .padding(10.dp)
-                                )
-                            }
                             uiState.modelMissingMessage?.let { message ->
                                 if (message.isNotBlank()) {
                                     Text(
-                                        text = "MODEL REQUIRED",
+                                        text = "MODEL REQUIRED: $message",
                                         color = Color.White,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -218,11 +225,13 @@ class MainActivity : ComponentActivity() {
                                 greenDuration = greenDuration,
                                 redDuration = redDuration,
                                 cameraLensMode = cameraLensMode,
+                                poseModelType = poseModelType,
                                 recordGameVideo = recordGameVideo,
                                 isRecording = isRecording,
                                 onGreenDurationChange = { greenDuration = it },
                                 onRedDurationChange = { redDuration = it },
                                 onCameraLensModeChange = { cameraLensMode = it },
+                                onPoseModelTypeChange = { poseModelType = it },
                                 onRecordGameVideoChange = { enabled ->
                                     if (enabled) {
                                         screenCaptureLauncher.launch(screenRecorder.createCaptureIntent())

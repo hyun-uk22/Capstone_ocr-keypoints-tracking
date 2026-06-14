@@ -4,13 +4,13 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.example.mugunghwa.game.GameEngine
 import com.example.mugunghwa.game.GameState
-import com.example.mugunghwa.mediapipe.PoseLandmarkerHelper
 import com.example.mugunghwa.ocr.OcrHelper
+import com.example.mugunghwa.pose.PoseEstimator
 import com.example.mugunghwa.util.ImageUtils
 import com.example.mugunghwa.util.TimeUtils
 
 class CameraAnalyzer(
-    private val poseLandmarkerHelper: PoseLandmarkerHelper,
+    private val poseEstimator: PoseEstimator,
     private val ocrHelper: OcrHelper,
     private val gameEngine: GameEngine
 ) : ImageAnalysis.Analyzer {
@@ -30,7 +30,7 @@ class CameraAnalyzer(
             } else {
                 null
             }
-            val accepted = poseLandmarkerHelper.detectLiveStream(
+            val accepted = poseEstimator.detectLiveStream(
                 bitmap = bitmap,
                 rotationDegrees = 0,
                 timestampMs = timestampMs
