@@ -13,10 +13,6 @@
         android:label="Freeze!"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Mugunghwa">
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr_korean" />
-
         <service
             android:name=".recording.MediaProjectionForegroundService"
             android:exported="false"

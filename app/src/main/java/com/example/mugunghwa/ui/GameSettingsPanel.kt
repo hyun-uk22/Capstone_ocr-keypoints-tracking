@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mugunghwa.camera.CameraLensMode
 import com.example.mugunghwa.game.GameUiState
+import com.example.mugunghwa.pose.PoseModelType
 
 @Composable
 fun GameSettingsPanel(
@@ -30,11 +31,13 @@ fun GameSettingsPanel(
     greenDuration: LightDurationOption,
     redDuration: LightDurationOption,
     cameraLensMode: CameraLensMode,
+    poseModelType: PoseModelType,
     recordGameVideo: Boolean,
     isRecording: Boolean,
     onGreenDurationChange: (LightDurationOption) -> Unit,
     onRedDurationChange: (LightDurationOption) -> Unit,
     onCameraLensModeChange: (CameraLensMode) -> Unit,
+    onPoseModelTypeChange: (PoseModelType) -> Unit,
     onRecordGameVideoChange: (Boolean) -> Unit,
     onStartAuto: (greenSeconds: Int, redSeconds: Int) -> Unit,
     onStopAuto: () -> Unit,
@@ -80,6 +83,12 @@ fun GameSettingsPanel(
             CameraSelectorControl(
                 selected = cameraLensMode,
                 onSelected = onCameraLensModeChange
+            )
+        }
+        SettingsSection(title = "POSE") {
+            PoseModelSelectorControl(
+                selected = poseModelType,
+                onSelected = onPoseModelTypeChange
             )
         }
     }

@@ -41,6 +41,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Python virtual environments and local ML conversion workspaces
+.venv/
+models/
+
+# Local experiment data/notebooks
+*.npy
+*.ipynb
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -63,3 +71,4 @@ reference_code/
 # Local report files with personal information
 *.hwp
 캡스톤디자인_과제결과보고서_v2_복사본.hwp
+study.ipynb
